@@ -17,5 +17,8 @@ This projct analysis th BrightTV viewership dataset to provide business insights
 This project uses two datasets:
 
 -User profiles
-
 -viewer Transactions
+
+**Note**
+-Date and time values were converted from UTC to South African Standard Time (SAST).
+-Each record respresents a single viewing session.
