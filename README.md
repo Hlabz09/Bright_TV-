@@ -12,5 +12,10 @@ This projct analysis th BrightTV viewership dataset to provide business insights
 
 4.Recommend context strategies to improve engagement on low-consumption days.
 
----
+
 ## Dataset Notes
+This project uses two datasets:
+
+-User profiles
+
+-viewer Transactions
