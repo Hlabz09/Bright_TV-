@@ -1,8 +1,7 @@
 # BRIGHTTV DATA ANALYSIS
-
 ## Project Overview
 This projct analysis th BrightTV viewership dataset to provide business insights that support the Customer Value Management (CVM) team in achieving the company's goal of growing its subscription base. The CEO aims to increase the company's subscription base during the financial year, this project use data analytics to answer key business questions and provide actionable recommendations.
----
+
 ## Objectives
 1.Analyze user and viewership trends.
 
@@ -20,5 +19,17 @@ This project uses two datasets:
 -viewer Transactions
 
 **Note**
+
 -Date and time values were converted from UTC to South African Standard Time (SAST).
+
 -Each record respresents a single viewing session.
+
+
+## Tools Used
+-SQL
+
+-Databricks
+
+-GitHub
+
+-Microsoft Excel
