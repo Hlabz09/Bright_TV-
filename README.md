@@ -1,2 +1,3 @@
-# Bright_TV-
+## BRIGHTTV DATA ANALYSIS
+
 A project about analyzing Bright TV viewership stats
