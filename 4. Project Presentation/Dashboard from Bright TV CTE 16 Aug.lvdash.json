@@ -1,0 +1,2158 @@
+{
+  "datasets": [
+    {
+      "name": "d54fa91d",
+      "displayName": "Bright TV Analysis",
+      "queryLines": [
+        "USE CATALOG `workspace`;\n",
+        "USE SCHEMA `default`;\n",
+        "\n",
+        "With user_profiles AS\n",
+        "(SELECT UserID,\n",
+        "           CASE ---Creating gender classification\n",
+        "                 WHEN Gender = 'None' THEN 'unknown' \n",
+        "                 WHEN Gender = ' ' THEN 'unknown' \n",
+        "                 WHEN Gender IS NULL THEN 'unknown' \n",
+        "                 ELSE Gender \n",
+        "              END AS Sex,\n",
+        "               \n",
+        "             CASE---classifying race\n",
+        "                 WHEN Race = 'None' THEN 'unknown' \n",
+        "                 WHEN Race = ' ' THEN 'unknown' \n",
+        "                 WHEN Race = 'other' THEN 'unknown' \n",
+        "                 WHEN Race IS NULL THEN 'unknown' \n",
+        "                 ELSE Race \n",
+        "             END AS Ethnicity,\n",
+        "\n",
+        "            CASE ---classifying Age\n",
+        "               WHEN Age = 0 THEN 'infant' \n",
+        "               WHEN Age BETWEEN 1 AND 12 THEN 'Kids' \n",
+        "               WHEN Age BETWEEN 13 AND 17 THEN 'youth' \n",
+        "               WHEN Age BETWEEN 18 AND 35 THEN 'youth Adults' \n",
+        "               WHEN Age BETWEEN 36 AND 50 THEN 'Adults' \n",
+        "               WHEN Age > 50 AND Age<=60 THEN 'Elder' \n",
+        "               WHEN Age > 60 THEN 'Pensioner' \n",
+        "            END AS Age_group,\n",
+        "\n",
+        "          CASE --classifying province\n",
+        "                WHEN Province = 'None' THEN 'Unclassified' \n",
+        "                WHEN Province = ' ' THEN 'Unclassified' \n",
+        "                WHEN Province = 'other' THEN 'Unclassified' \n",
+        "                WHEN Province IS NULL THEN 'Unclassified' \n",
+        "                ELSE Province \n",
+        "             END AS Regions,\n",
+        "\n",
+        "          CASE --classifying email\n",
+        "                WHEN 'Email' IS NOT NULL THEN 1 \n",
+        "                WHEN 'Email'<> ' ' THEN 1 \n",
+        "                ELSE 0 \n",
+        "           END AS Email_flag, \n",
+        "\n",
+        "        CASE --classifying social media handle\n",
+        "            WHEN 'Social Media Handle' IS NOT NULL THEN 1 \n",
+        "            ELSE 0 \n",
+        "        END AS Social_media_handle_flag\n",
+        "     \n",
+        "    FROM workspace.default.user_profile),\n",
+        "Base_viewership AS\n",
+        "              (SELECT\n",
+        "              COALESCE (UserID0, userid4) AS User_id,-- combining two user ids into one\n",
+        "              From_UTC_Timestamp(RecordDate2, 'Africa/Johannesburg') AS RecordDate_SAST,--converting timestamp to SA time \n",
+        "\t          Channel2,\n",
+        "             `Duration 2`\n",
+        "FROM workspace.default.viewership \n",
+        "),\n",
+        "Cleaned_viewership AS\n",
+        "( SELECT\n",
+        "              User_id,\n",
+        "              RecordDate_SAST,\n",
+        "              TO_DATE(RecordDate_SAST) AS watch_date, -- Convert a string into a date YYYY-MM=-DD \n",
+        "              DAYNAME(TO_DATE(RecordDate_SAST))AS day_name, -- Extract the day name \n",
+        "              MONTHNAME(TO_DATE(RecordDate_SAST)) AS month_name, -- Extracts the month name \n",
+        "               YEAR(TO_DATE(RecordDate_SAST)) AS event_year, -- Extracts the year value \n",
+        "               DAY(TO_DATE(RecordDate_SAST)) AS event_day, -- Extracts the day value \n",
+        "               HOUR(RecordDate_SAST) AS Hour_of_day,--extracts hour of day\n",
+        "        CASE \n",
+        "               WHEN DAYNAME(TO_DATE(RecordDate_SAST)) IN ('Sat', 'Sun') THEN '02. Weekend' \n",
+        "               ELSE '01. Weekday' \n",
+        "        END AS day_classification,\n",
+        "\n",
+        "        date_format(RecordDate_SAST, 'HH:mm:ss') AS Watch_time,--converting date format to time\n",
+        "    CASE\n",
+        "        WHEN watch_time BETWEEN '00:00:00' AND '05:59:59' THEN '01. Midnight'\n",
+        "        WHEN watch_time BETWEEN '06:00:00' AND '11:59:59' THEN '02. Morning'\n",
+        "        WHEN watch_time BETWEEN '12:00:00' AND '16:59:59' THEN '03. Afternoon'\n",
+        "        WHEN watch_time BETWEEN '17:00:00' AND '23:59:59' THEN '04. Evening'\n",
+        "    END AS Time_of_day,\n",
+        "\n",
+        "    \n",
+        "     `Duration 2`,\n",
+        "        DATE_FORMAT(`Duration 2`, 'HH:mm:ss') AS Duration,--converting duration into time format\n",
+        "(\n",
+        "    HOUR(TO_TIMESTAMP(`Duration 2`, 'HH:mm:ss')) +\n",
+        "    MINUTE(TO_TIMESTAMP(`Duration 2`, 'HH:mm:ss')) / 60.0 + --converting minutes to seconds\n",
+        "    SECOND(TO_TIMESTAMP(`Duration 2`, 'HH:mm:ss')) / 3600.0--converting seconds to minutes\n",
+        ") AS Duration_hours, \n",
+        "\n",
+        "        (\n",
+        "            HOUR(TO_TIMESTAMP(`Duration 2`, 'HH:mm:ss')) * 3600 + --converting hours to seconds\n",
+        "            MINUTE(TO_TIMESTAMP(`Duration 2`, 'HH:mm:ss')) * 60 + ---converting minutes to seconds\n",
+        "            SECOND(TO_TIMESTAMP(`Duration 2`, 'HH:mm:ss'))\n",
+        "        ) AS Duration_seconds,    \n",
+        "\n",
+        "    CASE\n",
+        "        WHEN Duration_seconds BETWEEN 300 AND 1800 THEN '01. Low Usage (<30 min)'\n",
+        "        WHEN Duration_seconds BETWEEN 1801 AND 3599 THEN '02. Medium Usage (<60 min)'\n",
+        "        WHEN Duration_seconds >= 3600 THEN '03. High Usage (>60 min)'\n",
+        "        ELSE '04. No Usage'\n",
+        "    END AS Screen_time_bucket, \n",
+        "\n",
+        "      CASE --cleaning channel\n",
+        "        WHEN Channel2 IN ('SawSee','Sawsee') THEN 'SawSee'\n",
+        "        WHEN Channel2 IN ('SuperSport Live Events','Live on SuperSport', 'Supersport Live Events', 'DStv Events 1') THEN 'Live Events'\n",
+        "        ELSE Channel2\n",
+        "    END AS Tv_channel\n",
+        "FROM Base_viewership)\n",
+        "\n",
+        "----Creating the final table\n",
+        "SELECT \n",
+        "      COALESCE (A. User_id, B. UserID) AS Sub_ID,\n",
+        "          Sex,\n",
+        "          Ethnicity,\n",
+        "          Age_group,\n",
+        "          Regions,\n",
+        "          Email_flag,\n",
+        "          Social_media_handle_flag,\n",
+        "          RecordDate_SAST,\n",
+        "          Watch_date,\n",
+        "          Day_name,\n",
+        "          Month_name,\n",
+        "          Event_year,\n",
+        "          Event_day,\n",
+        "          Hour_of_day,\n",
+        "          Day_classification,\n",
+        "          Watch_time,\n",
+        "          Time_of_day,\n",
+        "          Duration,\n",
+        "          Duration_hours,\n",
+        "          Duration_seconds,\n",
+        "          Screen_time_bucket, \n",
+        "          Tv_channel\n",
+        "FROM Cleaned_viewership AS A\n",
+        "LEFT JOIN user_profiles AS B\n",
+        "ON A.User_id=B.UserID;"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "16a2cc9c",
+      "displayName": "Time Analysis",
+      "layout": [
+        {
+          "widget": {
+            "name": "5023606c",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"text-align:center;display:block;\"><span style=\"font-weight:700;font-size:24px;color:#8BCAE7\">Bright TV Viewership Analysis</span></span>"
+              ]
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0A2780"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 9,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "t",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "count(Sub_ID)",
+                      "expression": "COUNT(`Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Record",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(Sub_ID)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "s",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Sub_ID)",
+                      "expression": "COUNT(DISTINCT `Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Subscribers"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Sub_ID)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "eee886bc",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Tv_channel)",
+                      "expression": "COUNT(DISTINCT `Tv_channel`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "TV Channels",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Tv_channel)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "d97be3d5",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Regions)",
+                      "expression": "COUNT(DISTINCT `Regions`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Regions",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Regions)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "a6fef0cd",
+            "multilineTextboxSpec": {
+              "lines": [
+                "![image gen item](https://ai-toolkit-generations.imgix.net/content/-t-e-x-t_-t-o_-i-m-a-g-e-v1/media__6/image-b06b9a6c-a1ca-4cbf-8b43-773e61bea7cc.png?auto=format%2Ccompress&cs=srgb&w=1280&fit=max&s=5edf38e9aad341462416e8877c359960)"
+              ]
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "1f9d0bb8",
+            "queries": [
+              {
+                "name": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Regions",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Regions",
+                      "expression": "`Regions`"
+                    },
+                    {
+                      "name": "Regions_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Regions",
+                    "queryName": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Regions"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "a0e02d25",
+            "queries": [
+              {
+                "name": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Sex",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Sex",
+                      "expression": "`Sex`"
+                    },
+                    {
+                      "name": "Sex_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Sex",
+                    "queryName": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Sex"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 4,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "d8201bff",
+            "queries": [
+              {
+                "name": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Age_group",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Age_group",
+                      "expression": "`Age_group`"
+                    },
+                    {
+                      "name": "Age_group_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Age_group",
+                    "queryName": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Age_group"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "a873253b",
+            "queries": [
+              {
+                "name": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Ethnicity",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Ethnicity",
+                      "expression": "`Ethnicity`"
+                    },
+                    {
+                      "name": "Ethnicity_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "Ethnicity",
+                    "queryName": "dashboards/01f19991f2a314889354903e084523d7/datasets/cdef6aac7901488684479e452441336e_Ethnicity"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 4,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "v",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Day_name",
+                      "expression": "`Day_name`"
+                    },
+                    {
+                      "name": "sum(Duration_hours)",
+                      "expression": "SUM(`Duration_hours`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Viewership by Day of Week"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Day_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(Duration_hours)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "a13de904",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Month_name",
+                      "expression": "`Month_name`"
+                    },
+                    {
+                      "name": "avg(Duration_hours)",
+                      "expression": "AVG(`Duration_hours`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Viewing Hours by Month",
+                "headerAlignment": "center"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Month_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg(Duration_hours)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "peak",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Time_of_day",
+                      "expression": "`Time_of_day`"
+                    },
+                    {
+                      "name": "sum(Duration_hours)",
+                      "expression": "SUM(`Duration_hours`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Peak Viewing Period"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Time_of_day",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(Duration_hours)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 10,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "t1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "sum(Duration_hours)",
+                      "expression": "SUM(`Duration_hours`)"
+                    },
+                    {
+                      "name": "Watch_time",
+                      "expression": "`Watch_time`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Time of Day Watch"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(Duration_hours)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "Watch_time",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "f7934e73",
+      "displayName": "TV Channels Viewership",
+      "layout": [
+        {
+          "widget": {
+            "name": "b4c0748a",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"text-align:center;display:block;\"><span style=\"font-weight:700;font-size:24px;color:#8BCAE7\">Bright TV Viewership Analysis</span></span>"
+              ]
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0A2780"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 9,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "5cb8b2d6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "count(Sub_ID)",
+                      "expression": "COUNT(`Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Record",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(Sub_ID)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "40a9a41d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Sub_ID)",
+                      "expression": "COUNT(DISTINCT `Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Subscribers"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Sub_ID)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "65482501",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Tv_channel)",
+                      "expression": "COUNT(DISTINCT `Tv_channel`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "TV Channels",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Tv_channel)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c422104f",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Regions)",
+                      "expression": "COUNT(DISTINCT `Regions`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Regions",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Regions)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "7e75bf88",
+            "multilineTextboxSpec": {
+              "lines": [
+                "![image gen item](https://ai-toolkit-generations.imgix.net/content/-t-e-x-t_-t-o_-i-m-a-g-e-v1/media__6/image-b06b9a6c-a1ca-4cbf-8b43-773e61bea7cc.png?auto=format%2Ccompress&cs=srgb&w=1280&fit=max&s=5edf38e9aad341462416e8877c359960)"
+              ]
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c8cd893e",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Regions",
+                      "expression": "`Regions`"
+                    },
+                    {
+                      "name": "countdistinct(Sub_ID)",
+                      "expression": "COUNT(DISTINCT `Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Subscription by Region"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Regions",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "countdistinct(Sub_ID)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "48f3b3f7",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Month_name",
+                      "expression": "`Month_name`"
+                    },
+                    {
+                      "name": "countdistinct(Sub_ID)",
+                      "expression": "COUNT(DISTINCT `Sub_ID`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`Tv_channel` IN (`Tv_channel`) OR TRUE"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Channel Performance Over Time"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "Month_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "countdistinct(Sub_ID)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "ac5ae4f4",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Tv_channel",
+                      "expression": "`Tv_channel`"
+                    },
+                    {
+                      "name": "count(Sub_ID)",
+                      "expression": "COUNT(`Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Top 10 Channels by Viewership"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "histogram",
+              "encodings": {
+                "x": {
+                  "fieldName": "Tv_channel",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "count(Sub_ID)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "a7b8a69b",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Sub_ID)",
+                      "expression": "COUNT(DISTINCT `Sub_ID`)"
+                    },
+                    {
+                      "name": "Ethnicity",
+                      "expression": "`Ethnicity`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Subscription by Region"
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "countdistinct(Sub_ID)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "Ethnicity",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 9,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "dce12540",
+      "displayName": "Viewership by Age Group",
+      "layout": [
+        {
+          "widget": {
+            "name": "20c7ac15",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"text-align:center;display:block;\"><span style=\"font-weight:700;font-size:24px;color:#8BCAE7\">Bright TV Viewership Analysis</span></span>"
+              ]
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0A2780"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 9,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "119872e7",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "count(Sub_ID)",
+                      "expression": "COUNT(`Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Record",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(Sub_ID)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "1cfd5408",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Sub_ID)",
+                      "expression": "COUNT(DISTINCT `Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Subscribers"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Sub_ID)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "6011cc35",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Tv_channel)",
+                      "expression": "COUNT(DISTINCT `Tv_channel`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "TV Channels",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Tv_channel)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "856a73ec",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Regions)",
+                      "expression": "COUNT(DISTINCT `Regions`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Regions",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(Regions)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "light": "#0F178D"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "55128858",
+            "multilineTextboxSpec": {
+              "lines": [
+                "![image gen item](https://ai-toolkit-generations.imgix.net/content/-t-e-x-t_-t-o_-i-m-a-g-e-v1/media__6/image-b06b9a6c-a1ca-4cbf-8b43-773e61bea7cc.png?auto=format%2Ccompress&cs=srgb&w=1280&fit=max&s=5edf38e9aad341462416e8877c359960)"
+              ]
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f6f213d0",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Age_group",
+                      "expression": "`Age_group`"
+                    },
+                    {
+                      "name": "avg(Duration_hours)",
+                      "expression": "AVG(`Duration_hours`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Average Viewing Duration By Age Group"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Age_group",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg(Duration_hours)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "cf935eed",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "countdistinct(Sub_ID)",
+                      "expression": "COUNT(DISTINCT `Sub_ID`)"
+                    },
+                    {
+                      "name": "Age_group",
+                      "expression": "`Age_group`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Age Group Share"
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "countdistinct(Sub_ID)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "Age_group",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "545802d6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Age_group",
+                      "expression": "`Age_group`"
+                    },
+                    {
+                      "name": "count(Sub_ID)",
+                      "expression": "COUNT(`Sub_ID`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Subscription by Age Group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Age_group",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "count(Sub_ID)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "v",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d54fa91d",
+                  "fields": [
+                    {
+                      "name": "Age_group",
+                      "expression": "`Age_group`"
+                    },
+                    {
+                      "name": "sum(Duration_hours)",
+                      "expression": "SUM(`Duration_hours`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "headerAlignment": "center",
+                "title": "Viewership by Age Group"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "Age_group",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(Duration_hours)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 9,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
